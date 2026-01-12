@@ -1,0 +1,5 @@
+{
+  "ear_threshold": 0.21,
+  "non_focus_duration": 3,
+  "audio_path": "audio/english.mp3"
+}
