@@ -50,7 +50,7 @@ pip install -r requirements.txt
 3. Jalankan aplikasi
 
 ```bash
-python main.py
+python app.py
 ```
 
 ## Tujuan Proyek
