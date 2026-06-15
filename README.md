@@ -14,10 +14,23 @@ Aplikasi akan memantau kondisi mata pengguna. Jika mata tertutup dalam beberapa 
 
 ## Teknologi
 
-- Python
+- Python (Flask)
 - OpenCV
 - MediaPipe
 - NumPy
+- HTML/CSS (Web Interface)
+
+## Tangkapan Layar
+
+### Tampilan Beranda
+![Tampilan Beranda](assets/beranda.png)
+
+### Tampilan Ruang Fokus & Pomodoro
+![Tampilan Ruang Fokus](assets/ruang_fokus.png)
+
+### Dashboard Statistik dan Riwayat
+![Tampilan Statistik Konsentrasi](assets/statistik.png)
+
 
 ## 🚀 Cara Menjalankan
 

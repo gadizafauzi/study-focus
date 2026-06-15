@@ -1,4 +1,5 @@
 import cv2
+import numpy as np
 import mediapipe as mp
 import time
 import json
@@ -30,6 +31,12 @@ last_status = "focused"
 start_non_focus = None
 lock = threading.Lock()
 
+# Pomodoro Variables
+POMODORO_WORK_TIME = 25 * 60
+POMODORO_BREAK_TIME = 5 * 60
+pomodoro_state = "IDLE"  # IDLE, WORK, BREAK
+pomodoro_end_time = 0
+
 # Global Analytics Variables
 analytics = {
     "focus_time": 0.0,
@@ -39,15 +46,40 @@ analytics = {
 }
 
 def generate_frames():
-    global current_status, last_status, start_non_focus, analytics
+    global current_status, last_status, start_non_focus, analytics, pomodoro_state
     
-    cap = cv2.VideoCapture(0)
+    cap = None
     last_time_check = time.time()
     
     while True:
+        if pomodoro_state != "WORK":
+            last_time_check = time.time()
+            if cap is not None and cap.isOpened():
+                cap.release()
+                cap = None
+            
+            # Placeholder frame during break/idle
+            frame = np.zeros((480, 640, 3), dtype=np.uint8)
+            msg = "Kamera Dimatikan (IDLE)" if pomodoro_state == "IDLE" else "Mode Istirahat (BREAK) - Rileks!"
+            cv2.putText(frame, msg, (50, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+            ret, buffer = cv2.imencode('.jpg', frame)
+            yield (b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+            time.sleep(1)
+            continue
+            
+        if cap is None or not cap.isOpened():
+            cap = cv2.VideoCapture(0)
+
         success, frame = cap.read()
         if not success:
-            break
+            last_time_check = time.time()
+            err_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+            cv2.putText(err_frame, "Gagal mengakses kamera.", (20, 220), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+            cv2.putText(err_frame, "(Mungkin sedang dipakai Zoom/aplikasi lain?)", (20, 260), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 1)
+            ret, buffer = cv2.imencode('.jpg', err_frame)
+            yield (b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+            time.sleep(1)
+            continue
         else:
             # Membalik frame seperti cermin
             frame = cv2.flip(frame, 1)
@@ -128,7 +160,24 @@ def video_feed():
 
 @app.route('/api/stats')
 def api_stats():
+    global pomodoro_state, pomodoro_end_time
     with lock:
+        current_time = time.time()
+        time_left = 0
+        
+        # Check and transition pomodoro state
+        if pomodoro_state != "IDLE":
+            time_left = int(pomodoro_end_time - current_time)
+            if time_left <= 0:
+                if pomodoro_state == "WORK":
+                    pomodoro_state = "BREAK"
+                    pomodoro_end_time = current_time + POMODORO_BREAK_TIME
+                    time_left = POMODORO_BREAK_TIME
+                elif pomodoro_state == "BREAK":
+                    pomodoro_state = "IDLE"
+                    pomodoro_end_time = 0
+                    time_left = 0
+
         total = analytics["focus_time"] + analytics["unfocus_time"]
         score = int((analytics["focus_time"] / total * 100)) if total > 0 else 100
         duration_minutes = round(total / 60, 1)
@@ -137,8 +186,34 @@ def api_stats():
             "duration": duration_minutes,
             "score": score,
             "sleep_count": analytics["sleep_count"],
-            "logs": analytics["logs"]
+            "logs": analytics["logs"],
+            "pomodoro_state": pomodoro_state,
+            "pomodoro_time_left": time_left
         })
+
+@app.route('/api/pomodoro/start')
+def start_pomodoro():
+    global pomodoro_state, pomodoro_end_time, analytics
+    pomodoro_state = "WORK"
+    pomodoro_end_time = time.time() + POMODORO_WORK_TIME
+    
+    # Reset statistik saat memulai sesi baru
+    analytics = {
+        "focus_time": 0.0,
+        "unfocus_time": 0.0,
+        "sleep_count": 0,
+        "logs": []
+    }
+    
+    return jsonify({"status": "started", "state": pomodoro_state})
+
+@app.route('/api/pomodoro/stop')
+def stop_pomodoro():
+    global pomodoro_state, pomodoro_end_time
+    with lock:
+        pomodoro_state = "IDLE"
+        pomodoro_end_time = 0
+    return jsonify({"status": "success", "state": pomodoro_state})
 
 if __name__ == "__main__":
     app.run(debug=True, threaded=True, use_reloader=False)
